@@ -46,8 +46,36 @@ export default function Home() {
   const [commentText, setCommentText] = useState('');
   const [videoComments, setVideoComments] = useState<{ [key: number]: string[] }>({});
 
-  // Sayfa yüklendiğinde Supabase oturum kontrolü
+  // Supabase'den videoları çeken fonksiyon
+  const fetchVideos = async () => {
+    const { data, error } = await supabase
+      .from('videos')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error) {
+      console.error("Videolar çekilemedi:", error.message);
+    } else if (data) {
+      // Supabase'den gelen verileri uygulamanın formatına uyarlıyoruz
+      const formattedVideos = data.map((vid: any) => ({
+        id: vid.id,
+        title: vid.title,
+        desc: vid.desc || vid.description || "",
+        videoUrl: vid.video_url,
+        creator: vid.creator || "@ufakdizi_kullanici",
+        likes: vid.likes || 0,
+        comments: vid.comments || 0,
+        favorited: false,
+        liked: false
+      }));
+      setVideos(formattedVideos);
+    }
+  };
+
+  // Sayfa yüklendiğinde Supabase oturum kontrolü ve videoları çekme
   useEffect(() => {
+    fetchVideos();
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
     });
@@ -144,7 +172,7 @@ export default function Home() {
         window.URL.revokeObjectURL(videoElement.src);
         
         if (videoElement.duration > 60) {
-          alert(`Seçtiğiniz video ${Math.round(videoElement.duration)} saniye. Mini dizi videoları en fazla 1 dakika (60 saniye) olabilir!`);
+          alert(`Seçtiğiniz video ${Math.round(videoElement.duration)} saniye. Ufak Dizi videoları en fazla 1 dakika (60 saniye) olabilir!`);
           if (fileInputRef.current) fileInputRef.current.value = '';
           setSelectedVideoUrl(null);
         } else {
@@ -157,7 +185,7 @@ export default function Home() {
     }
   };
 
-  // Video Paylaşım Gönderimi
+  // Video Paylaşım Gönderimi (Supabase Kaydı Eklendi)
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!videoTitle) {
@@ -171,29 +199,36 @@ export default function Home() {
 
     setIsUploading(true);
 
-    setTimeout(() => {
-      const newLocalVideo = {
-        id: Date.now(),
-        title: videoTitle,
-        creator: user ? `@${user.email?.split('@')[0]}` : "@benim_dizim",
-        desc: videoDesc || "Yeni yüklenen mini dizi bölümü!",
-        likes: 0,
-        comments: 0,
-        favorited: false,
-        liked: false,
-        videoUrl: selectedVideoUrl
-      };
+    // Supabase veritabanına kalıcı kayıt atma
+    const { error } = await supabase
+      .from('videos')
+      .insert([
+        {
+          title: videoTitle,
+          desc: videoDesc || "Yeni yüklenen ufak dizi bölümü!",
+          video_url: selectedVideoUrl,
+          creator: user ? `@${user.email?.split('@')[0]}` : "@ufak_dizi",
+          likes: 0,
+          comments: 0
+        }
+      ]);
 
-      setVideos([newLocalVideo, ...videos]);
+    if (error) {
+      alert("Video yüklenirken hata oluştu: " + error.message);
       setIsUploading(false);
-      setCurrentVideoIndex(0);
-      handleTabChange('kesfet');
-      setVideoTitle('');
-      setVideoDesc('');
-      setSelectedVideoUrl(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      alert("Video başarıyla akışa eklendi!");
-    }, 500);
+      return;
+    }
+
+    setIsUploading(false);
+    alert("Video başarıyla Ufak Dizi akışına eklendi!");
+    
+    // Formu temizle ve keşfet sekmesine dönüp güncel listeyi çek
+    setVideoTitle('');
+    setVideoDesc('');
+    setSelectedVideoUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    handleTabChange('kesfet');
+    fetchVideos();
   };
 
   // Takip Kısmı İçin Yazı Paylaşma Fonksiyonu
@@ -220,9 +255,9 @@ export default function Home() {
         
         {/* Üst Logo ve Durum Çubuğu */}
         <div className="absolute top-0 left-0 right-0 z-30 flex justify-between items-center p-4 bg-gradient-to-b from-black/80 via-black/30 to-transparent pointer-events-none">
-          <span className="font-extrabold text-xl tracking-wider text-red-600 pointer-events-auto">MINIDIZI</span>
+          <span className="font-extrabold text-xl tracking-wider text-teal-400 pointer-events-auto">UFAK DİZİ</span>
           <div className="flex items-center gap-2 pointer-events-auto">
-            <span className="w-2 h-2 rounded-full bg-red-600 animate-ping"></span>
+            <span className="w-2 h-2 rounded-full bg-teal-400 animate-ping"></span>
             <span className="text-xs font-semibold text-zinc-300">CANLI AKIŞ</span>
           </div>
         </div>
@@ -250,7 +285,7 @@ export default function Home() {
                   {/* Sağ Etkileşim Butonları */}
                   <div className="absolute right-4 bottom-24 flex flex-col items-center gap-6 z-20" onClick={(e) => e.stopPropagation()}>
                     <button onClick={handleLikeToggle} className="flex flex-col items-center group">
-                      <div className={`p-3 rounded-full backdrop-blur-md transition-all duration-300 ${currentVideo.liked ? 'bg-red-600 text-white scale-110' : 'bg-black/40 text-white group-hover:bg-black/60'}`}>
+                      <div className={`p-3 rounded-full backdrop-blur-md transition-all duration-300 ${currentVideo.liked ? 'bg-teal-500 text-white scale-110' : 'bg-black/40 text-white group-hover:bg-black/60'}`}>
                         <Heart className={`w-6 h-6 ${currentVideo.liked ? 'fill-white' : ''}`} />
                       </div>
                       <span className="text-xs font-semibold mt-1 shadow-sm">{currentVideo.likes}</span>
@@ -285,7 +320,7 @@ export default function Home() {
                     <p className="text-xs text-zinc-400 line-clamp-1 mb-2">{currentVideo.desc}</p>
                     <div className="flex items-center gap-2 text-xs text-zinc-400">
                       <Music2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Orijinal Dizi Müzikleri</span>
+                      <span>Ufak Dizi Orijinal Ses</span>
                     </div>
                   </div>
 
@@ -304,7 +339,7 @@ export default function Home() {
                         {(videoComments[currentVideo.id] || []).length > 0 ? (
                           (videoComments[currentVideo.id] || []).map((c, i) => (
                             <div key={i} className="bg-zinc-800/50 p-2.5 rounded-xl text-xs text-zinc-300 text-left">
-                              <span className="font-bold text-red-500 mr-2">@izleyici</span>
+                              <span className="font-bold text-teal-400 mr-2">@izleyici</span>
                               {c}
                             </div>
                           ))
@@ -319,9 +354,9 @@ export default function Home() {
                           placeholder="Yorum yap..." 
                           value={commentText}
                           onChange={(e) => setCommentText(e.target.value)}
-                          className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-red-500"
+                          className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-teal-400"
                         />
-                        <button type="submit" className="bg-red-600 text-white font-bold px-4 py-2 rounded-xl text-xs">
+                        <button type="submit" className="bg-teal-500 text-zinc-950 font-bold px-4 py-2 rounded-xl text-xs">
                           Gönder
                         </button>
                       </form>
@@ -336,7 +371,7 @@ export default function Home() {
                   <button 
                     type="button"
                     onClick={() => handleTabChange('paylasim')} 
-                    className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-lg transition cursor-pointer"
+                    className="px-5 py-2.5 bg-teal-500 hover:bg-teal-400 text-zinc-950 font-bold text-xs rounded-xl shadow-lg transition cursor-pointer"
                   >
                     Hemen Video Yükle
                   </button>
@@ -348,7 +383,7 @@ export default function Home() {
           {/* ================= 2. PAYLAŞIM SEKMESİ ================= */}
           {activeTab === 'paylasim' && (
             <div className="p-6 bg-zinc-950">
-              <h2 className="text-xl font-bold mb-1 text-red-500">1 Dakikalık Dizi Yükle</h2>
+              <h2 className="text-xl font-bold mb-1 text-teal-400">1 Dakikalık Dizi Yükle</h2>
               <p className="text-xs text-zinc-400 mb-6">Uygulama içine dikey video ekle (Maksimum 60 saniye).</p>
 
               <form onSubmit={handleUploadSubmit} className="space-y-4">
@@ -362,7 +397,7 @@ export default function Home() {
 
                 <div 
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full h-36 border-2 border-dashed border-zinc-700 hover:border-red-500 rounded-2xl flex flex-col items-center justify-center cursor-pointer transition bg-zinc-900/50"
+                  className="w-full h-36 border-2 border-dashed border-zinc-700 hover:border-teal-400 rounded-2xl flex flex-col items-center justify-center cursor-pointer transition bg-zinc-900/50"
                 >
                   <Upload className="w-8 h-8 text-zinc-400 mb-2" />
                   <span className="text-xs font-medium text-zinc-300">
@@ -377,7 +412,7 @@ export default function Home() {
                     placeholder="Örn: Bölüm #1 - Beklenmeyen An" 
                     value={videoTitle}
                     onChange={(e) => setVideoTitle(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-teal-400"
                   />
                 </div>
 
@@ -387,14 +422,14 @@ export default function Home() {
                     placeholder="Bölüm hakkında kısa bilgi..." 
                     value={videoDesc}
                     onChange={(e) => setVideoDesc(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500 h-20 resize-none"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-teal-400 h-20 resize-none"
                   />
                 </div>
 
                 <button 
                   type="submit" 
                   disabled={isUploading}
-                  className="w-full py-3 bg-red-600 hover:bg-red-700 font-bold rounded-xl text-sm transition shadow-lg shadow-red-900/30 mt-2 disabled:opacity-50 cursor-pointer"
+                  className="w-full py-3 bg-teal-500 hover:bg-teal-400 text-zinc-950 font-bold rounded-xl text-sm transition shadow-lg shadow-teal-900/30 mt-2 disabled:opacity-50 cursor-pointer"
                 >
                   {isUploading ? "Yükleniyor..." : "Yayınla ve Keşfet'te Gör"}
                 </button>
@@ -406,7 +441,7 @@ export default function Home() {
           {activeTab === 'takip' && (
             <div className="p-4 bg-zinc-950 flex flex-col min-h-full space-y-4">
               <div className="flex items-center gap-2 border-b border-zinc-800 pb-3">
-                <PenTool className="w-5 h-5 text-red-500" />
+                <PenTool className="w-5 h-5 text-teal-400" />
                 <h2 className="text-base font-bold text-white">Takip Akışı ve Yazılar</h2>
               </div>
 
@@ -416,12 +451,12 @@ export default function Home() {
                   placeholder="Aklındakileri veya yeni duyuruları takipçilerinle paylaş..." 
                   value={postText}
                   onChange={(e) => setPostText(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-red-500 h-20 resize-none"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-teal-400 h-20 resize-none"
                 />
                 <div className="flex justify-end">
                   <button 
                     type="submit" 
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition"
+                    className="px-4 py-2 bg-teal-500 hover:bg-teal-400 text-zinc-950 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition"
                   >
                     <Send className="w-3.5 h-3.5" /> Yazı Yayınla
                   </button>
@@ -434,7 +469,7 @@ export default function Home() {
                   posts.map((post) => (
                     <div key={post.id} className="bg-zinc-900/80 border border-zinc-800/80 p-3.5 rounded-2xl text-left space-y-2">
                       <div className="flex justify-between items-center">
-                        <span className="font-bold text-xs text-red-500">{post.creator}</span>
+                        <span className="font-bold text-xs text-teal-400">{post.creator}</span>
                         <span className="text-[10px] text-zinc-500">{post.time}</span>
                       </div>
                       <p className="text-xs text-zinc-200 leading-relaxed">{post.content}</p>
@@ -452,7 +487,7 @@ export default function Home() {
           {/* ================= 4. FAVORİLER SEKMESİ ================= */}
           {activeTab === 'favoriler' && (
             <div className="p-6 bg-zinc-950">
-              <h2 className="text-xl font-bold mb-4 text-red-500">Favori Dizilerim</h2>
+              <h2 className="text-xl font-bold mb-4 text-teal-400">Favori Dizilerim</h2>
               <div className="space-y-3">
                 {videos.filter(v => v.favorited).length > 0 ? (
                   videos.filter(v => v.favorited).map((fav) => (
@@ -479,7 +514,7 @@ export default function Home() {
               {user ? (
                 <div className="w-full space-y-6">
                   <div className="text-center">
-                    <div className="w-20 h-20 bg-gradient-to-tr from-red-600 to-amber-500 border-2 border-red-500 rounded-full flex items-center justify-center mx-auto text-white font-black text-2xl shadow-lg shadow-red-900/40">
+                    <div className="w-20 h-20 bg-gradient-to-tr from-teal-500 to-amber-500 border-2 border-teal-400 rounded-full flex items-center justify-center mx-auto text-zinc-950 font-black text-2xl shadow-lg shadow-teal-900/40">
                       {user.email?.[0].toUpperCase()}
                     </div>
                     <h2 className="text-lg font-bold text-white mt-3">@{user.email?.split('@')[0]}</h2>
@@ -503,15 +538,15 @@ export default function Home() {
 
                   <button 
                     onClick={handleLogout}
-                    className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 text-red-500 font-semibold rounded-xl border border-zinc-800 transition text-xs flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-3 bg-zinc-900 hover:bg-zinc-800 text-teal-400 font-semibold rounded-xl border border-zinc-800 transition text-xs flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <LogOut className="w-4 h-4" /> Çıkış Yap
                   </button>
                 </div>
               ) : (
                 <div className="w-full my-auto text-center py-6">
-                  <h2 className="text-xl font-bold mb-1 text-red-500">{isSignUp ? "Hesap Oluştur" : "Giriş Yap"}</h2>
-                  <p className="text-xs text-zinc-400 mb-6">Mini dizi dünyasına katılmak için giriş yap.</p>
+                  <h2 className="text-xl font-bold mb-1 text-teal-400">{isSignUp ? "Hesap Oluştur" : "Giriş Yap"}</h2>
+                  <p className="text-xs text-zinc-400 mb-6">Ufak Dizi dünyasına katılmak için giriş yap.</p>
                   
                   <form onSubmit={handleAuth} className="space-y-4 text-left">
                     <div>
@@ -521,7 +556,7 @@ export default function Home() {
                         placeholder="ornek@mail.com" 
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500"
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-teal-400"
                         required
                       />
                     </div>
@@ -533,14 +568,14 @@ export default function Home() {
                         placeholder="******" 
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500"
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-teal-400"
                         required
                       />
                     </div>
 
                     <button 
                       type="submit" 
-                      className="w-full py-3 bg-red-600 hover:bg-red-700 font-bold rounded-xl text-sm transition shadow-lg shadow-red-900/30 mt-2 cursor-pointer"
+                      className="w-full py-3 bg-teal-500 hover:bg-teal-400 text-zinc-950 font-bold rounded-xl text-sm transition shadow-lg shadow-teal-900/30 mt-2 cursor-pointer"
                     >
                       {isSignUp ? "Kayıt Ol" : "Giriş Yap"}
                     </button>
@@ -566,7 +601,7 @@ export default function Home() {
           <button 
             type="button"
             onClick={() => handleTabChange('kesfet')} 
-            className={`flex flex-col items-center gap-1 p-2 cursor-pointer transition ${activeTab === 'kesfet' ? 'text-red-500 scale-105' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`flex flex-col items-center gap-1 p-2 cursor-pointer transition ${activeTab === 'kesfet' ? 'text-teal-400 scale-105' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
             <Compass className="w-5 h-5" />
             <span className="text-[10px] font-medium">Keşfet</span>
@@ -575,7 +610,7 @@ export default function Home() {
           <button 
             type="button"
             onClick={() => handleTabChange('takip')} 
-            className={`flex flex-col items-center gap-1 p-2 cursor-pointer transition ${activeTab === 'takip' ? 'text-red-500 scale-105' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`flex flex-col items-center gap-1 p-2 cursor-pointer transition ${activeTab === 'takip' ? 'text-teal-400 scale-105' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
             <Users className="w-5 h-5" />
             <span className="text-[10px] font-medium">Takip</span>
@@ -586,8 +621,8 @@ export default function Home() {
             onClick={() => handleTabChange('paylasim')} 
             className="flex flex-col items-center -mt-5 cursor-pointer z-50 group"
           >
-            <div className="w-12 h-12 rounded-full bg-gradient-to-r from-red-600 to-red-500 flex items-center justify-center shadow-lg shadow-red-600/50 border-2 border-black group-hover:scale-110 transition duration-200">
-              <PlusCircle className="w-6 h-6 text-white" />
+            <div className="w-12 h-12 rounded-full bg-gradient-to-r from-teal-500 to-teal-400 flex items-center justify-center shadow-lg shadow-teal-500/50 border-2 border-black group-hover:scale-110 transition duration-200">
+              <PlusCircle className="w-6 h-6 text-zinc-950" />
             </div>
             <span className="text-[9px] font-semibold text-zinc-400 mt-0.5">Paylaş</span>
           </button>
@@ -595,7 +630,7 @@ export default function Home() {
           <button 
             type="button"
             onClick={() => handleTabChange('favoriler')} 
-            className={`flex flex-col items-center gap-1 p-2 cursor-pointer transition ${activeTab === 'favoriler' ? 'text-red-500 scale-105' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`flex flex-col items-center gap-1 p-2 cursor-pointer transition ${activeTab === 'favoriler' ? 'text-teal-400 scale-105' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
             <Bookmark className="w-5 h-5" />
             <span className="text-[10px] font-medium">Favoriler</span>
@@ -604,7 +639,7 @@ export default function Home() {
           <button 
             type="button"
             onClick={() => handleTabChange('profil')} 
-            className={`flex flex-col items-center gap-1 p-2 cursor-pointer transition ${activeTab === 'profil' ? 'text-red-500 scale-105' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`flex flex-col items-center gap-1 p-2 cursor-pointer transition ${activeTab === 'profil' ? 'text-teal-400 scale-105' : 'text-zinc-500 hover:text-zinc-300'}`}
           >
             <User className="w-5 h-5" />
             <span className="text-[10px] font-medium">Profil</span>
